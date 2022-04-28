@@ -6,8 +6,10 @@ package org.mozilla.fenix.ui
 
 import android.view.View
 import androidx.test.espresso.IdlingRegistry
+import androidx.test.uiautomator.UiSelector
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
+import org.junit.Assume.assumeFalse
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -15,12 +17,14 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.customannotations.SmokeTest
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.helpers.AndroidAssetDispatcher
+import org.mozilla.fenix.helpers.FeatureSettingsHelper
 import org.mozilla.fenix.helpers.HomeActivityTestRule
 import org.mozilla.fenix.helpers.RecyclerViewIdlingResource
 import org.mozilla.fenix.helpers.TestAssetHelper
 import org.mozilla.fenix.helpers.ViewVisibilityIdlingResource
 import org.mozilla.fenix.ui.robots.addonsMenu
 import org.mozilla.fenix.ui.robots.homeScreen
+import org.mozilla.fenix.ui.robots.mDevice
 import org.mozilla.fenix.ui.robots.navigationToolbar
 
 /**
@@ -31,7 +35,9 @@ class SettingsAddonsTest {
     private lateinit var mockWebServer: MockWebServer
     private var addonsListIdlingResource: RecyclerViewIdlingResource? = null
     private var addonContainerIdlingResource: ViewVisibilityIdlingResource? = null
-    private val addonName = "Ghostery – Privacy Ad Blocker"
+    private val featureSettingsHelper = FeatureSettingsHelper()
+    private val addonsList = listOf("Ghostery – Privacy Ad Blocker", "uBlock Origin", "Dark Reader", "AdGuard AdBlocker", "FoxyProxy Standard")
+    private val addonName = addonsList.random()
 
     @get:Rule
     val activityTestRule = HomeActivityTestRule()
@@ -42,6 +48,8 @@ class SettingsAddonsTest {
             dispatcher = AndroidAssetDispatcher()
             start()
         }
+        // disabling the new homepage pop-up that interferes with the tests.
+        featureSettingsHelper.setJumpBackCFREnabled(false)
     }
 
     @After
@@ -55,6 +63,9 @@ class SettingsAddonsTest {
         if (addonContainerIdlingResource != null) {
             IdlingRegistry.getInstance().unregister(addonContainerIdlingResource!!)
         }
+
+        // resetting modified features enabled setting to default
+        featureSettingsHelper.resetAllFeatureFlags()
     }
 
     // Walks through settings add-ons menu to ensure all items are present
@@ -90,9 +101,8 @@ class SettingsAddonsTest {
                 cancelInstallAddon()
                 clickInstallAddon(addonName)
                 acceptPermissionToInstallAddon()
-                closeAddonInstallCompletePrompt(addonName
-                    //, activityTestRule
-                )
+                assumeFalse(mDevice.findObject(UiSelector().text("Failed to install $addonName")).exists())
+                closeAddonInstallCompletePrompt(addonName, activityTestRule)
                 verifyAddonIsInstalled(addonName)
                 verifyEnabledTitleDisplayed()
             }
@@ -103,7 +113,7 @@ class SettingsAddonsTest {
     fun verifyAddonsCanBeUninstalled() {
         addonsMenu {
             installAddon(addonName)
-            closeAddonInstallCompletePrompt(addonName /*, activityTestRule*/)
+            closeAddonInstallCompletePrompt(addonName, activityTestRule)
             IdlingRegistry.getInstance().unregister(addonsListIdlingResource!!)
         }.openDetailedMenuForAddon(addonName) {
             addonContainerIdlingResource = ViewVisibilityIdlingResource(
@@ -128,7 +138,7 @@ class SettingsAddonsTest {
 
         addonsMenu {
             installAddon(addonName)
-            closeAddonInstallCompletePrompt(addonName/*, activityTestRule*/)
+            closeAddonInstallCompletePrompt(addonName, activityTestRule)
             IdlingRegistry.getInstance().unregister(addonsListIdlingResource!!)
         }.goBack {
         }.openNavigationToolbar {
@@ -140,19 +150,18 @@ class SettingsAddonsTest {
     @SmokeTest
     @Test
     fun useAddonsInPrivateModeTest() {
-        val trackingPage = TestAssetHelper.getEnhancedTrackingProtectionAsset(mockWebServer)
+        val testPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
 
         homeScreen {
         }.togglePrivateBrowsingMode()
         addonsMenu {
             installAddon(addonName)
             selectAllowInPrivateBrowsing(/*, activityTestRule*/)
-            closeAddonInstallCompletePrompt(addonName/*, activityTestRule*/)
+            closeAddonInstallCompletePrompt(addonName, activityTestRule)
             // IdlingRegistry.getInstance().unregister(addonsListIdlingResource!!)
         }.goBack {}
         navigationToolbar {
-        }.enterURLAndEnterToBrowser(trackingPage.url) {
-            verifyPageContent(trackingPage.content)
+        }.enterURLAndEnterToBrowser(testPage.url) {
         }.openThreeDotMenu {
             openAddonsSubList()
             verifyAddonAvailableInMainMenu(addonName)
@@ -172,6 +181,7 @@ class SettingsAddonsTest {
             clickInstallAddon(addonName)
             verifyAddonPermissionPrompt(addonName)
             acceptPermissionToInstallAddon()
+            assumeFalse(mDevice.findObject(UiSelector().text("Failed to install $addonName")).exists())
         }
     }
 }
